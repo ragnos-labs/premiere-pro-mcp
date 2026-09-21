@@ -185,7 +185,7 @@ export function getKeyframeTools(bridgeOptions: BridgeOptions) {
     },
 
     get_keyframes: {
-      description: "Get all keyframes for a specific effect property on a clip",
+      description: "Get all keyframes for a specific effect property on a clip. Times are clip-relative Premiere ticks and seconds; interpolation is not read or verified by this CEP backend.",
       parameters: {
         type: "object" as const,
         properties: {
@@ -243,8 +243,11 @@ export function getKeyframeTools(bridgeOptions: BridgeOptions) {
               var val = null;
               try { val = prop.getValueAtKey(time); } catch(e) {}
               keyframes.push({
-                time: __ticksToSeconds(time.ticks),
-                value: val
+                timeSeconds: __ticksToSeconds(time.ticks),
+                timeTicks: String(time.ticks),
+                timeDomain: "clip_relative",
+                value: val,
+                interpolation: { state: "unsupported" }
               });
             }
           }
@@ -497,7 +500,7 @@ export function getKeyframeTools(bridgeOptions: BridgeOptions) {
     },
 
     set_keyframe_interpolation: {
-      description: "Set the interpolation type of a keyframe (Linear, Hold, or Bezier)",
+      description: "Request an interpolation type for a keyframe. CEP cannot read interpolation back, so the result remains unverified.",
       parameters: {
         type: "object" as const,
         properties: {
@@ -564,8 +567,10 @@ export function getKeyframeTools(bridgeOptions: BridgeOptions) {
           
           return __result({
             set: true,
-            interpolation: "${args.interpolation}",
-            time: ${args.time_seconds}
+            requestedInterpolation: "${args.interpolation}",
+            timeSeconds: ${args.time_seconds},
+            timeDomain: "clip_relative",
+            interpolationVerification: "unsupported"
           });
         `);
         return sendCommand(script, bridgeOptions);

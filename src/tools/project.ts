@@ -2,10 +2,16 @@ import {
   buildToolScript,
   escapeForExtendScript,
 } from "../bridge/script-builder.js";
-import { sendCommand, BridgeOptions } from "../bridge/file-bridge.js";
+import { sendCommand, reconcileBridgeCommand, BridgeOptions } from "../bridge/file-bridge.js";
 
 export function getProjectTools(bridgeOptions: BridgeOptions) {
   return {
+    reconcile_bridge_command: {
+      description: "Re-read a retained timed-out bridge command without publishing another host command. It releases the bridge writer only after a complete response is available.",
+      parameters: {},
+      handler: async () => reconcileBridgeCommand(bridgeOptions),
+    },
+
     save_project: {
       description: "Save the current Premiere Pro project",
       parameters: {},
@@ -13,8 +19,9 @@ export function getProjectTools(bridgeOptions: BridgeOptions) {
         const script = buildToolScript(`
           var project = app.project;
           if (!project) return __error("No project is open");
-          project.save();
-          return __result({ saved: true, name: project.name, path: project.path });
+          var saveResult = project.save();
+          if (saveResult !== true && saveResult !== 1) return __error("Premiere did not confirm that the project was saved.");
+          return __result({ saved: true, verified: true, name: project.name, path: project.path });
         `);
         return sendCommand(script, bridgeOptions);
       },
@@ -37,8 +44,10 @@ export function getProjectTools(bridgeOptions: BridgeOptions) {
         const script = buildToolScript(`
           var project = app.project;
           if (!project) return __error("No project is open");
-          project.saveAs("${escapeForExtendScript(args.path)}");
-          return __result({ saved: true, path: "${escapeForExtendScript(args.path)}" });
+          var saveResult = project.saveAs("${escapeForExtendScript(args.path)}");
+          if (saveResult !== true && saveResult !== 1) return __error("Premiere did not confirm that the project was saved to the requested path.");
+          if (String(project.path) !== "${escapeForExtendScript(args.path)}") return __error("Premiere saved the project but did not bind the requested project path.");
+          return __result({ saved: true, verified: true, path: project.path });
         `);
         return sendCommand(script, bridgeOptions);
       },

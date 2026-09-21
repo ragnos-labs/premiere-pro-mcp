@@ -42,6 +42,8 @@ export const MAX_QUEUED_BRIDGE_COMMANDS = 32;
 export const MAX_BRIDGE_RESPONSE_BYTES = 1_048_576;
 export const BRIDGE_HEARTBEAT_FILE = "bridge-heartbeat.json";
 export const BRIDGE_HEARTBEAT_STALE_MS = 3_000;
+export const BRIDGE_WRITER_LOCK_FILE = "bridge-writer.lock";
+export const BRIDGE_UNCERTAIN_FILE = "bridge-uncertain.json";
 
 type ResponseListener = () => void;
 
@@ -188,6 +190,8 @@ export interface CommandResult {
   success: boolean;
   data?: unknown;
   error?: string;
+  /** A timed-out host command may still change Premiere. Reconcile before retrying. */
+  outcome?: "uncertain";
 }
 
 export type BridgeLivenessState = "running" | "waiting" | "stale" | "unknown";
@@ -488,6 +492,94 @@ function ensureHelpers(tempDir: string, helpers?: BridgeHelpers): string {
   return activeHelpers.buildBootstrap(helpersPath);
 }
 
+function bridgePath(tempDir: string, file: string): string {
+  return join(tempDir, file);
+}
+
+function hasUncertainBridgeCommand(tempDir: string): boolean {
+  const recordFile = bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE);
+  if (!existsSync(recordFile)) return false;
+  try {
+    const record = JSON.parse(readFileSync(recordFile, "utf-8")) as { responseFile?: unknown };
+    return typeof record.responseFile === "string";
+  } catch {
+    return true;
+  }
+}
+
+function acquireBridgeWriter(tempDir: string): CommandResult | string {
+  ensurePrivateBridgeDirectory(tempDir);
+  const lockFile = bridgePath(tempDir, BRIDGE_WRITER_LOCK_FILE);
+  try {
+    writeFileSync(lockFile, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }), {
+      encoding: "utf-8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    return lockFile;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return existsSync(bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE))
+      ? {
+          success: false,
+          outcome: "uncertain",
+          error: "A previous bridge command timed out and remains uncertain. Reconcile it before sending another command.",
+        }
+      : {
+          success: false,
+          error: "Another MCP process is using this Premiere bridge. Retry after its command completes.",
+        };
+  }
+}
+
+async function withBridgeWriter(
+  tempDir: string,
+  run: () => Promise<CommandResult>,
+): Promise<CommandResult> {
+  const lock = acquireBridgeWriter(tempDir);
+  if (typeof lock !== "string") return lock;
+  let uncertain = false;
+  try {
+    const result = await run();
+    uncertain = result.outcome === "uncertain";
+    return result;
+  } finally {
+    if (!uncertain) safeUnlink(lock);
+  }
+}
+
+/**
+ * Re-read the retained response for the command that timed out. This never
+ * publishes another host command, so it cannot overlap an uncertain mutation.
+ */
+export function reconcileBridgeCommand(options?: BridgeOptions): CommandResult {
+  const tempDir = getTempDir(options);
+  const recordFile = bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE);
+  if (!existsSync(recordFile)) return { success: true, data: { state: "clear" } };
+  try {
+    const record = JSON.parse(readFileSync(recordFile, "utf-8")) as { commandFile?: string; responseFile?: string };
+    if (!record.responseFile || !existsSync(record.responseFile)) {
+      return {
+        success: false,
+        outcome: "uncertain",
+        error: "The previous bridge command has no completed response yet. Inspect Premiere, then reconcile again; do not retry the mutation.",
+      };
+    }
+    const result = JSON.parse(readFileSync(record.responseFile, "utf-8")) as CommandResult;
+    if (typeof result.success !== "boolean") {
+      return { success: false, outcome: "uncertain", error: "The retained bridge response is incomplete; the command remains uncertain." };
+    }
+    safeUnlink(record.commandFile ?? "");
+    safeUnlink(record.responseFile);
+    safeUnlink(record.responseFile.replace(/res_/, "busy_"));
+    safeUnlink(recordFile);
+    safeUnlink(bridgePath(tempDir, BRIDGE_WRITER_LOCK_FILE));
+    return { success: true, data: { state: "resolved", result } };
+  } catch {
+    return { success: false, outcome: "uncertain", error: "The retained bridge reconciliation record cannot be read; the command remains uncertain." };
+  }
+}
+
 /**
  * Send a command (ExtendScript) to the CEP plugin and wait for a response.
  * 
@@ -503,7 +595,7 @@ export async function sendCommand(
 ): Promise<CommandResult> {
   validateScript(script);
   const tempDir = getTempDir(options);
-  return scheduleBridgeCommand(tempDir, () => sendCommandUnchecked(script, options));
+  return scheduleBridgeCommand(tempDir, () => withBridgeWriter(tempDir, () => sendCommandUnchecked(script, options)));
 }
 
 async function sendCommandUnchecked(
@@ -525,6 +617,7 @@ async function sendCommandUnchecked(
   const resFile = join(tempDir, `res_${id}.json`);
   const busyFile = join(tempDir, `busy_${id}.json`);
 
+  let uncertain = false;
   try {
     // Write a complete command before its .jsx name makes it visible to CEP.
     // renameSync is atomic when both paths are in the bridge directory.
@@ -532,12 +625,19 @@ async function sendCommandUnchecked(
 ${script}`, "utf-8");
     renameSync(stagedCmdFile, cmdFile);
 
-    return await pollForResponse(resFile, busyFile, timeoutMs);
+    const result = await pollForResponse(resFile, busyFile, timeoutMs);
+    uncertain = result.outcome === "uncertain";
+    if (uncertain) {
+      writeFileSync(bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE), JSON.stringify({ commandFile: cmdFile, responseFile: resFile }), { encoding: "utf-8", mode: 0o600 });
+    }
+    return result;
   } finally {
-    safeUnlink(stagedCmdFile);
-    safeUnlink(cmdFile);
-    safeUnlink(resFile);
-    safeUnlink(busyFile);
+    if (!uncertain) {
+      safeUnlink(stagedCmdFile);
+      safeUnlink(cmdFile);
+      safeUnlink(resFile);
+      safeUnlink(busyFile);
+    }
   }
 }
 
@@ -574,7 +674,7 @@ export async function sendRawCommand(
 ): Promise<CommandResult> {
   validateScript(script, true);
   const tempDir = getTempDir(options);
-  return scheduleBridgeCommand(tempDir, () => sendRawCommandUnchecked(script, options));
+  return scheduleBridgeCommand(tempDir, () => withBridgeWriter(tempDir, () => sendRawCommandUnchecked(script, options)));
 }
 
 async function sendRawCommandUnchecked(
@@ -596,16 +696,24 @@ async function sendRawCommandUnchecked(
   const resFile = join(tempDir, `res_${id}.json`);
   const busyFile = join(tempDir, `busy_${id}.json`);
 
+  let uncertain = false;
   try {
     writeFileSync(stagedCmdFile, `${ensureHelpers(tempDir, options?.helpers)}
 ${script}`, "utf-8");
     renameSync(stagedCmdFile, cmdFile);
-    return await pollForResponse(resFile, busyFile, timeoutMs);
+    const result = await pollForResponse(resFile, busyFile, timeoutMs);
+    uncertain = result.outcome === "uncertain";
+    if (uncertain) {
+      writeFileSync(bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE), JSON.stringify({ commandFile: cmdFile, responseFile: resFile }), { encoding: "utf-8", mode: 0o600 });
+    }
+    return result;
   } finally {
-    safeUnlink(stagedCmdFile);
-    safeUnlink(cmdFile);
-    safeUnlink(resFile);
-    safeUnlink(busyFile);
+    if (!uncertain) {
+      safeUnlink(stagedCmdFile);
+      safeUnlink(cmdFile);
+      safeUnlink(resFile);
+      safeUnlink(busyFile);
+    }
   }
 }
 
@@ -696,6 +804,7 @@ async function pollForResponse(
         }
         finish({
           success: false,
+          outcome: "uncertain",
           error: sawBusy
             ? `Premiere accepted the script but did not finish within ${elapsed}ms. ` +
               `A modal dialog inside Premiere Pro is likely blocking the scripting engine — ` +
@@ -737,6 +846,7 @@ export function cleanupTempDir(options?: BridgeOptions): void {
   // Validate before enumerating or deleting. Startup cleanup must never follow
   // an attacker-controlled symlink/junction or adopt an untrusted directory.
   ensurePrivateBridgeDirectory(tempDir);
+  if (hasUncertainBridgeCommand(tempDir)) return;
 
   try {
     const files = readdirSync(tempDir);

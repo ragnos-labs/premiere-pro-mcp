@@ -1,7 +1,8 @@
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { capabilityForTool } from "../../src/security/capabilities.js";
 import { expect, it } from "vitest";
 import { reconcileBridgeCommand, cleanupTempDir } from "../../src/bridge/file-bridge.js";
 
@@ -14,6 +15,11 @@ it("reconciles a completed command after its writer exits without replaying or d
     writeFileSync(join(root, "bridge-uncertain.json"), JSON.stringify({ commandFile: cmd, responseFile: res, pending: true, pid: process.pid }));
     writeFileSync(cmd, "retained");
     writeFileSync(res, JSON.stringify({ success: true, data: { saved: true } }));
+    expect(capabilityForTool("reconcile_bridge_command")).toBe("inspect");
+    writeFileSync(join(root, "bridge-reconcile.lock"), JSON.stringify({ pid: process.pid }));
+    expect(reconcileBridgeCommand({ tempDir: root }).outcome).toBe("uncertain");
+    expect(existsSync(cmd)).toBe(true);
+    unlinkSync(join(root, "bridge-reconcile.lock"));
     cleanupTempDir({ tempDir: root });
     expect(existsSync(cmd)).toBe(true);
     expect(reconcileBridgeCommand({ tempDir: root }).outcome).toBe("uncertain");

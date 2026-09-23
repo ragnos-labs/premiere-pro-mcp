@@ -14,3 +14,14 @@ Fetch `upstream`, review the changes from the pinned base, rebase the fork branc
 ## Installation and rollback
 
 Build and install a versioned local artifact only after source validation. Pin the client configuration to that artifact, retain the prior artifact and configuration bytes, then run a read-only host probe before enabling finishing work. To roll back, restore the prior client pin and retained artifact, verify the connection read-only, and reconcile any uncertain bridge command before a new mutation. Scheduled update monitoring is intentionally not configured.
+
+Reconciliation is available to inspect-only clients and all tool packs. It owns
+an exclusive local reconciliation lock before reading or removing shared state.
+The command record precedes publication, so a dead writer can be reconciled from
+the retained response. A live writer cannot be reconciled out from under itself.
+If a reconciler itself is interrupted, preserve its lock and verify its recorded
+PID is dead before removing that exact lock. Never remove an uncertain command
+or response to force another mutation through.
+
+Save uses the documented zero success code and reports acceptance separately
+from persistence verification. Source tests do not establish a live host result.

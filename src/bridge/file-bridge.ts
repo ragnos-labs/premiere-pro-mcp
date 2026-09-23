@@ -554,6 +554,20 @@ async function withBridgeWriter(
  */
 export function reconcileBridgeCommand(options?: BridgeOptions): CommandResult {
   const tempDir = getTempDir(options);
+  ensurePrivateBridgeDirectory(tempDir);
+  const guard = bridgePath(tempDir, "bridge-reconcile.lock");
+  try {
+    writeFileSync(guard, JSON.stringify({ pid: process.pid }), { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return { success: false, outcome: "uncertain", error: "Another reconciler owns bridge-reconcile.lock. If interrupted, verify its PID has exited and preserve/remove that exact stale lock before retrying." };
+  }
+  try { return reconcileBridgeCommandOwned(options); }
+  finally { safeUnlink(guard); }
+}
+
+function reconcileBridgeCommandOwned(options?: BridgeOptions): CommandResult {
+  const tempDir = getTempDir(options);
   const recordFile = bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE);
   ensurePrivateBridgeDirectory(tempDir);
   if (!existsSync(recordFile)) {

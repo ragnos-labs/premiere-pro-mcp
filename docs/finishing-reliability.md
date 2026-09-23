@@ -23,5 +23,7 @@ If a reconciler itself is interrupted, preserve its lock and verify its recorded
 PID is dead before removing that exact lock. Never remove an uncertain command
 or response to force another mutation through.
 
-Save uses the documented zero success code and reports acceptance separately
+Save accepts the documented numeric zero and the boolean true observed on a
+Premiere 26 host. Other return values remain rejected with their type/value
+reported for diagnosis. It reports acceptance separately
 from persistence verification. Source tests do not establish a live host result.

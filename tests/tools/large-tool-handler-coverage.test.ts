@@ -4,6 +4,7 @@ import type { BridgeOptions } from "../../src/bridge/file-bridge.js";
 vi.mock("../../src/bridge/file-bridge.js", () => ({
   sendCommand: vi.fn().mockResolvedValue({ success: true, data: { covered: true } }),
   sendRawCommand: vi.fn().mockResolvedValue({ success: true, data: { covered: true } }),
+  reconcileBridgeCommand: vi.fn().mockReturnValue({ success: false, outcome: "uncertain", error: "covered" }),
 }));
 
 import { sendCommand, sendRawCommand } from "../../src/bridge/file-bridge.js";

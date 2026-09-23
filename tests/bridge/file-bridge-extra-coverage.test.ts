@@ -146,6 +146,7 @@ describe("file bridge fallback and cleanup branches", () => {
     const response = sendCommand("var cleanup = true;", { tempDir: "/tmp/cleanup-bridge" });
     await expect(response).resolves.toEqual({ success: true });
 
+    fs.exists.mockImplementation((path) => !String(path).endsWith("bridge-writer.lock"));
     fs.readdir.mockReturnValue([
       "busy_1.json", "cmd_1.jsx", "res_1.json", "helpers.jsx",
     ] as ReturnType<typeof readdirSync>);

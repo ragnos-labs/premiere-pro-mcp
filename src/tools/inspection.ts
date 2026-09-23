@@ -381,7 +381,16 @@ export function getInspectionTools(bridgeOptions: BridgeOptions) {
                 mediaType: clip.mediaType
               };
               try { ci.enabled = !clip.isDisabled(); } catch(e) { ci.enabled = true; }
-              try { ci.speed = clip.getSpeed(); } catch(e) {}
+              ci.speed = null;
+              ci.speedState = "unknown";
+              ci.reversed = null;
+              try {
+                var videoSpeed = clip.getSpeed();
+                if (typeof videoSpeed === "number" && isFinite(videoSpeed)) {
+                  ci.speed = videoSpeed;
+                  ci.speedState = "known";
+                }
+              } catch(e) {}
               try { ci.reversed = clip.isSpeedReversed(); } catch(e) {}
               try { ci.isAdjustmentLayer = clip.isAdjustmentLayer(); } catch(e) {}
               try { ci.isSelected = clip.isSelected(); } catch(e) {}
@@ -454,7 +463,15 @@ export function getInspectionTools(bridgeOptions: BridgeOptions) {
                 mediaType: clip.mediaType
               };
               try { ci.enabled = !clip.isDisabled(); } catch(e) { ci.enabled = true; }
-              try { ci.speed = clip.getSpeed(); } catch(e) {}
+              ci.speed = null;
+              ci.speedState = "unknown";
+              try {
+                var audioSpeed = clip.getSpeed();
+                if (typeof audioSpeed === "number" && isFinite(audioSpeed)) {
+                  ci.speed = audioSpeed;
+                  ci.speedState = "known";
+                }
+              } catch(e) {}
               try {
                 if (clip.projectItem) {
                   ci.sourceNodeId = clip.projectItem.nodeId;
@@ -531,7 +548,16 @@ export function getInspectionTools(bridgeOptions: BridgeOptions) {
           };
 
           try { info.enabled = !clip.isDisabled(); } catch(e) { info.enabled = true; }
-          try { info.speed = clip.getSpeed(); } catch(e) {}
+          info.speed = null;
+          info.speedState = "unknown";
+          info.reversed = null;
+          try {
+            var clipSpeed = clip.getSpeed();
+            if (typeof clipSpeed === "number" && isFinite(clipSpeed)) {
+              info.speed = clipSpeed;
+              info.speedState = "known";
+            }
+          } catch(e) {}
           try { info.reversed = clip.isSpeedReversed(); } catch(e) {}
           try { info.isSelected = clip.isSelected(); } catch(e) {}
           try { info.isAdjustmentLayer = clip.isAdjustmentLayer(); } catch(e) {}

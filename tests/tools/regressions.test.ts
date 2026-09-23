@@ -26,6 +26,7 @@ import { getProjectTools } from "../../src/tools/project.js";
 import { getMediaTools } from "../../src/tools/media.js";
 import { getTextTools } from "../../src/tools/text.js";
 import { getKeyframeTools } from "../../src/tools/keyframes.js";
+import { getInspectionTools } from "../../src/tools/inspection.js";
 import { getCaptionTools } from "../../src/tools/captions.js";
 import { getSequenceTools } from "../../src/tools/sequence.js";
 import { getPlayheadTools } from "../../src/tools/playhead.js";
@@ -287,6 +288,55 @@ describe("PR #3 follow-ups — color_correct and export_sequence", () => {
     // Hardcoded install paths rot the moment Adobe ships the next version.
     expect(code).not.toContain("Adobe Media Encoder 2025");
     expect(code).not.toContain("Adobe Media Encoder 2026");
+  });
+});
+
+describe("Premiere finishing reliability", () => {
+  it("checks Premiere save and direct-export acceptance instead of reporting success unconditionally", async () => {
+    const project = getProjectTools(bridgeOptions);
+    const save = await scriptFor(project.save_project, {});
+    const saveAs = await scriptFor(project.save_project_as, { path: "/tmp/working.prproj" });
+    const exported = await scriptFor(getExportTools(bridgeOptions).export_sequence, { output_path: "/tmp/working.mp4" });
+
+    expect(save).toContain("saveResult !== 0");
+    expect(saveAs).toContain("project.path");
+    expect(exported).toContain("exportResult !== true && exportResult !== 1");
+    expect(exported).toContain('outcome: "committed_unverified"');
+  });
+
+  it("executes save handlers with documented success and failure codes", async () => {
+    const project = getProjectTools(bridgeOptions);
+    for (const code of [0, 1, false, undefined]) {
+      const script = await scriptFor(project.save_project, {});
+      const result = JSON.parse(runInNewContext(script, {
+        app: { project: { save: () => code, name: "Test", path: "/test.prproj" } },
+        __result: (data: unknown) => JSON.stringify({ success: true, data }),
+        __error: (error: string) => JSON.stringify({ success: false, error }),
+      }));
+      expect(result.success).toBe(code === 0);
+    }
+  });
+
+  it("labels unreadable speeds and CEP keyframe verification limits explicitly", async () => {
+    const inspection = await scriptFor(getInspectionTools(bridgeOptions).get_full_sequence_info, {});
+    const keyframes = await scriptFor(getKeyframeTools(bridgeOptions).get_keyframes, {
+      node_id: "clip-1",
+      effect_name: "Volume",
+      property_name: "Level",
+    });
+    const interpolation = await scriptFor(getKeyframeTools(bridgeOptions).set_keyframe_interpolation, {
+      node_id: "clip-1",
+      effect_name: "Volume",
+      property_name: "Level",
+      time_seconds: 1,
+      interpolation: "linear",
+    });
+
+    expect(inspection).toContain('speedState = "unknown"');
+    expect(inspection).toContain('speedState = "known"');
+    expect(keyframes).toContain('timeDomain: "clip_relative"');
+    expect(keyframes).toContain('interpolation: { state: "unsupported" }');
+    expect(interpolation).toContain('interpolationVerification: "unsupported"');
   });
 });
 

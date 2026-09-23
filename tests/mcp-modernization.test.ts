@@ -132,7 +132,7 @@ describe("modern MCP surface", () => {
       // unsafe-script, so the two scripting tools are not advertised.
       expect(tools.tools.map((tool) => tool.name)).not.toContain("execute_extendscript");
       expect(tools.tools.map((tool) => tool.name)).not.toContain("evaluate_expression");
-      expect(tools.tools).toHaveLength(379);
+      expect(tools.tools).toHaveLength(380);
       expect(tools.tools.find((tool) => tool.name === "preview_after_effects_render_handoff")?.annotations?.readOnlyHint).toBe(true);
       expect(tools.tools.find((tool) => tool.name === "apply_after_effects_render_handoff")?.annotations?.readOnlyHint).toBe(false);
       const capabilityTool = tools.tools.find((tool) => tool.name === "get_capabilities");
@@ -221,9 +221,10 @@ describe("modern MCP surface", () => {
         "verify_delivery_file",
       ]));
       expect(names).not.toContain("create_bin");
-      // Essential is a 15-tool focused path (including the two always-visible
+      // Essential is a 16-tool focused path (including the three always-visible
       // diagnostics), versus the full default catalog.
-      expect(names).toHaveLength(15);
+      expect(names).toHaveLength(16);
+      expect(names).toContain("reconcile_bridge_command");
 
       const capabilities = await client.callTool({
         name: "get_capabilities",

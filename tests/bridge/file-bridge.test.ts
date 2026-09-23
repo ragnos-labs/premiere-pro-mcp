@@ -254,7 +254,7 @@ describe("sendCommand", () => {
 
   it("refuses an existing temp dir that was writable by other users", async () => {
     if (typeof process.getuid !== "function") return;
-    mockedExistsSync.mockReturnValue(true);
+    mockedExistsSync.mockImplementation((path) => !String(path).endsWith("bridge-uncertain.json"));
     mockedLstatSync.mockReturnValueOnce({
       uid: process.getuid!(),
       mode: 0o777,
@@ -738,7 +738,7 @@ describe("cleanupTempDir", () => {
   });
 
   it("removes cmd_ and res_ files", () => {
-    mockedExistsSync.mockReturnValue(true);
+    mockedExistsSync.mockImplementation((path) => !String(path).endsWith("bridge-uncertain.json") && !String(path).endsWith("bridge-writer.lock"));
     mockedReaddirSync.mockReturnValue([
       "cmd_123.jsx" as any,
       "cmd_124.jsx.staged" as any,

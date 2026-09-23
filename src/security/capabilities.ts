@@ -56,6 +56,7 @@ export function requireCapability(
 export const UNSAFE_TOOL_NAMES = new Set(["execute_extendscript", "send_raw_script", "evaluate_expression"]);
 
 const INSPECT_TOOL_NAMES = new Set([
+  "reconcile_bridge_command",
   "ping",
   "get_capabilities",
   "preview_edit_plan",

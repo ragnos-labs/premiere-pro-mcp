@@ -38,7 +38,7 @@ export interface ToolPackReport {
 
 // Match the capability layer's diagnostic guarantee. A narrowed list must
 // still let an operator discover the selected packs and diagnose authority.
-const ALWAYS_ADVERTISED_DIAGNOSTIC_TOOLS = new Set(["ping", "get_capabilities"]);
+const ALWAYS_ADVERTISED_DIAGNOSTIC_TOOLS = new Set(["ping", "get_capabilities", "reconcile_bridge_command"]);
 
 /**
  * Each pack is deliberately a short, reviewable set of named tools. Keeping

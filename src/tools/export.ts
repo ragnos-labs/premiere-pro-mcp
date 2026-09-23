@@ -712,13 +712,21 @@ export function getExportTools(bridgeOptions: BridgeOptions) {
                if (!presetPath) return __error("Could not locate a default H.264 preset. Pass preset_path explicitly.");`
           }
 
-          var exportResult = seq.exportAsMediaDirect(
+           var exportResult = seq.exportAsMediaDirect(
             outputPath,
             presetPath,
-            ${args.work_area_only ? "app.encoder.ENCODE_WORKAREA" : "app.encoder.ENCODE_ENTIRE"}
-          );
-
-          return __result({ exported: true, outputPath: outputPath, presetUsed: presetPath });
+             ${args.work_area_only ? "app.encoder.ENCODE_WORKAREA" : "app.encoder.ENCODE_ENTIRE"}
+           );
+           if (exportResult !== true && exportResult !== 1) return __error("Premiere did not confirm that the sequence export was accepted.");
+           return __result({
+             exported: true,
+             accepted: true,
+             verified: false,
+             outcome: "committed_unverified",
+             outputPath: outputPath,
+             presetUsed: presetPath,
+             verificationScope: "Premiere accepted the direct export. Verify the completed output file independently."
+           });
         `);
         return sendCommand(script, { ...bridgeOptions, timeoutMs: 120000 }); // 2 min timeout for exports
       },

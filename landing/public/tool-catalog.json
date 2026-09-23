@@ -3,10 +3,10 @@
   "evidenceScope": "source_catalog_may_include_unreleased_work",
   "sourceVersion": "1.16.3",
   "sourcePath": "docs/supported-actions.md",
-  "sourceSha256": "0314e8e2133b4aa90de00143e2a1d502ae977deade99d7c64be2d7ed56eadd8b",
+  "sourceSha256": "1430e1e61674d24585e9d0dddfaf8a4da4f07d2425604f4b1e4437be1538a715",
   "hostVerification": "not_established_by_catalogs",
   "counts": {
-    "default": 379,
+    "default": 380,
     "uxp": 95,
     "restricted": 2
   },
@@ -987,7 +987,7 @@
       "name": "get_keyframes",
       "surface": "default",
       "modes": "Single operation",
-      "description": "Get all keyframes for a specific effect property on a clip"
+      "description": "Get all keyframes for a specific effect property on a clip. Times are clip-relative Premiere ticks and seconds; interpolation is not read or verified by this CEP backend."
     },
     {
       "name": "get_linked_items",
@@ -2124,6 +2124,12 @@
       "description": "Read waveform percentiles, RGB parade percentiles, saturation, and near-black/near-white RGB occupancy from one bounded decoded local-media frame. Read-only; this is a sampled analytical proxy, not Premiere's rendered scopes."
     },
     {
+      "name": "reconcile_bridge_command",
+      "surface": "default",
+      "modes": "Single operation",
+      "description": "Re-read a retained timed-out bridge command without publishing another host command. It releases the bridge writer only after a complete response is available."
+    },
+    {
       "name": "redo",
       "surface": "default",
       "modes": "Single operation",
@@ -2499,7 +2505,7 @@
       "name": "set_keyframe_interpolation",
       "surface": "default",
       "modes": "interpolation: linear, hold, bezier",
-      "description": "Set the interpolation type of a keyframe (Linear, Hold, or Bezier)"
+      "description": "Request an interpolation type for a keyframe. CEP cannot read interpolation back, so the result remains unverified."
     },
     {
       "name": "set_metadata",

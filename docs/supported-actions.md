@@ -10,11 +10,11 @@ source catalog may include unreleased actions.
 
 | Surface | Count | Availability |
 | --- | ---: | --- |
-| Registered core actions | 381 | CEP/local server catalog; host and authority checks still apply |
-| Default-profile core actions | 379 | Advertised with `inspect,edit,export,filesystem` |
+| Registered core actions | 382 | CEP/local server catalog; host and authority checks still apply |
+| Default-profile core actions | 380 | Advertised with `inspect,edit,export,filesystem` |
 | Restricted core actions | 2 | Require explicit `unsafe-script` authority |
 | Authenticated UXP additions | 95 | Advertised only while a compatible authenticated UXP panel is connected |
-| Default profile with UXP | 474 | 379 core plus 95 UXP tools |
+| Default profile with UXP | 475 | 380 core plus 95 UXP tools |
 
 ## How to read support
 
@@ -172,7 +172,7 @@ operation” when the tool has no enum-based mode.
 | `get_graphics_white_luminance` | Default profile | Single operation | Get the graphics white luminance value (HDR setting) for the project |
 | `get_insertion_bin` | Default profile | Single operation | Get the current target bin for new imports (the bin that is currently focused in the Project panel) |
 | `get_item_info` | Default profile | Single operation | Get detailed type info about a project item (is it a sequence, multicam, merged clip, etc.) |
-| `get_keyframes` | Default profile | Single operation | Get all keyframes for a specific effect property on a clip |
+| `get_keyframes` | Default profile | Single operation | Get all keyframes for a specific effect property on a clip. Times are clip-relative Premiere ticks and seconds; interpolation is not read or verified by this CEP backend. |
 | `get_linked_items` | Default profile | Single operation | Get all clips in the sequence that are linked to the same source as a given clip |
 | `get_metadata` | Default profile | Single operation | Get metadata for a project item. Use parse_fields to return named XMP/project fields instead of raw XML. Project metadata XML and file/clip XMP are separate packets; disable either when identity/path is enough. Prefer inspect_project_panel_metadata_uxp item_columns or manage_metadata_uxp inspect_fields for visible columns. This is not the premiere://project/metadata resource. GPS and serials are omitted from parse_fields unless include_sensitive is true. |
 | `get_mogrt_component` | Default profile | Single operation | Get MOGRT (Motion Graphics Template) component parameters from a clip |
@@ -303,6 +303,7 @@ operation” when the tool has no enum-based mode.
 | `razor_all_tracks` | Default profile | `track_type`: `video`, `audio`, `both` | Razor (split) all clips at the playhead position across all tracks, or at a specific time. |
 | `read_sequence_captions` | Default profile | Single operation | Diagnose whether the active Premiere scripting host can enumerate caption tracks. It never treats an empty result as proof that the sequence has no captions, because most CEP builds expose caption creation but not caption reads. |
 | `read_video_scopes` | Default profile | Single operation | Read waveform percentiles, RGB parade percentiles, saturation, and near-black/near-white RGB occupancy from one bounded decoded local-media frame. Read-only; this is a sampled analytical proxy, not Premiere's rendered scopes. |
+| `reconcile_bridge_command` | Default profile | Single operation | Re-read a retained timed-out bridge command without publishing another host command. It releases the bridge writer only after a complete response is available. |
 | `redo` | Default profile | Single operation | Unavailable: Premiere exposes no supported, observable redo-stack API, so a scripted redo cannot be performed or verified. |
 | `refresh_media` | Default profile | Single operation | Refresh a project item to pick up changes to the source file |
 | `relink_media` | Default profile | Single operation | Relink an offline media item to a new file path |
@@ -359,7 +360,7 @@ operation” when the tool has no enum-based mode.
 | `set_frame_blend` | Default profile | Single operation | Enable or disable frame blending on a clip. Uses QE DOM. |
 | `set_graphics_white_luminance` | Default profile | Single operation | Set the graphics white luminance value (HDR setting) for the project |
 | `set_item_in_out` | Default profile | Single operation | Set in and/or out points on a project item in the project panel (marks source range for editing). |
-| `set_keyframe_interpolation` | Default profile | `interpolation`: `linear`, `hold`, `bezier` | Set the interpolation type of a keyframe (Linear, Hold, or Bezier) |
+| `set_keyframe_interpolation` | Default profile | `interpolation`: `linear`, `hold`, `bezier` | Request an interpolation type for a keyframe. CEP cannot read interpolation back, so the result remains unverified. |
 | `set_metadata` | Default profile | `packet`: `project`, `xmp` | Update project metadata on a project item. Supply complete metadata_xml plus updated_fields, or field_name and value to read-modify-write one XMP/project property through AdobeXMPScript with field readback. |
 | `set_offline` | Default profile | Single operation | Set a project item offline, or ask Premiere to refresh it back online when offline is false. |
 | `set_override_frame_rate` | Default profile | Single operation | Override the frame rate of a project item (useful for image sequences or misinterpreted media) |

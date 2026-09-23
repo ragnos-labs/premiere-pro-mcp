@@ -20,7 +20,7 @@ export function getProjectTools(bridgeOptions: BridgeOptions) {
           var project = app.project;
           if (!project) return __error("No project is open");
           var saveResult = project.save();
-          if (saveResult !== 0) return __error("Premiere did not confirm that the project was saved.");
+          if (saveResult !== 0 && saveResult !== true) return __error("Premiere did not confirm that the project was saved. Return type/value: " + typeof saveResult + "/" + String(saveResult));
           return __result({ saved: true, accepted: true, verified: false, outcome: "committed_unverified", name: project.name, path: project.path });
         `);
         return sendCommand(script, bridgeOptions);
@@ -45,7 +45,7 @@ export function getProjectTools(bridgeOptions: BridgeOptions) {
           var project = app.project;
           if (!project) return __error("No project is open");
           var saveResult = project.saveAs("${escapeForExtendScript(args.path)}");
-          if (saveResult !== 0) return __error("Premiere did not confirm that the project was saved to the requested path.");
+          if (saveResult !== 0 && saveResult !== true) return __error("Premiere did not confirm that the project was saved to the requested path. Return type/value: " + typeof saveResult + "/" + String(saveResult));
           if (String(project.path) !== "${escapeForExtendScript(args.path)}") return __error("Premiere saved the project but did not bind the requested project path.");
           return __result({ saved: true, accepted: true, verified: false, outcome: "committed_unverified", path: project.path });
         `);

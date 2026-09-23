@@ -298,10 +298,23 @@ describe("Premiere finishing reliability", () => {
     const saveAs = await scriptFor(project.save_project_as, { path: "/tmp/working.prproj" });
     const exported = await scriptFor(getExportTools(bridgeOptions).export_sequence, { output_path: "/tmp/working.mp4" });
 
-    expect(save).toContain("saveResult !== true && saveResult !== 1");
+    expect(save).toContain("saveResult !== 0");
     expect(saveAs).toContain("project.path");
     expect(exported).toContain("exportResult !== true && exportResult !== 1");
     expect(exported).toContain('outcome: "committed_unverified"');
+  });
+
+  it("executes save handlers with documented success and failure codes", async () => {
+    const project = getProjectTools(bridgeOptions);
+    for (const code of [0, 1, false, undefined]) {
+      const script = await scriptFor(project.save_project, {});
+      const result = JSON.parse(runInNewContext(script, {
+        app: { project: { save: () => code, name: "Test", path: "/test.prproj" } },
+        __result: (data: unknown) => JSON.stringify({ success: true, data }),
+        __error: (error: string) => JSON.stringify({ success: false, error }),
+      }));
+      expect(result.success).toBe(code === 0);
+    }
   });
 
   it("labels unreadable speeds and CEP keyframe verification limits explicitly", async () => {

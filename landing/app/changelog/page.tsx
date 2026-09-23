@@ -6,6 +6,30 @@ import { product } from "@/lib/product"
 
 const releases = [
   {
+    version: "1.16.3",
+    date: "2026-09-18",
+    label: "Changelog spacing and dependency updates",
+    groups: [
+      { title: "Changed", items: [
+        "Changelog intro no longer stacks a large vertical pad on the shared public-content main padding.",
+        "npm minor and patch updates for PostHog, zod, and @types/node."
+      ] },
+      { title: "Verification scope", items: ["Automated checks do not establish licensed-host playback or rendered-output verification."] }
+    ],
+  },
+  {
+    version: "1.16.2",
+    date: "2026-09-18",
+    label: "Installable UXP CCX packages and restored path commands",
+    groups: [
+      { title: "Fixed", items: [
+        "Direct UXP .ccx packages now use a plugin-id bundle root and Unix 644/755 permission bits so Creative Cloud / UPI can extract plugin metadata.",
+        "Path-based UXP commands now resolve native paths through the granted workspace folder instead of advertising them as unsupported on every host."
+      ] },
+      { title: "Verification scope", items: ["Automated checks do not establish licensed-host playback or rendered-output verification."] }
+    ],
+  },
+  {
     version: "1.16.1",
     date: "2026-09-17",
     label: "Sync-locked insert and ripple delete, plus editor-request tools",
@@ -943,7 +967,7 @@ export default function ChangelogPage() {
       />
 
 
-      <section className="border-b border-site-line px-5 py-16 md:py-24">
+      <section className="border-b border-site-line px-5 pb-12 md:pb-16">
         <div className="mx-auto max-w-6xl">
           <HomeLink
             href="/"

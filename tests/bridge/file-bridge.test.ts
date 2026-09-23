@@ -738,7 +738,7 @@ describe("cleanupTempDir", () => {
   });
 
   it("removes cmd_ and res_ files", () => {
-    mockedExistsSync.mockImplementation((path) => !String(path).endsWith("bridge-uncertain.json"));
+    mockedExistsSync.mockImplementation((path) => !String(path).endsWith("bridge-uncertain.json") && !String(path).endsWith("bridge-writer.lock"));
     mockedReaddirSync.mockReturnValue([
       "cmd_123.jsx" as any,
       "cmd_124.jsx.staged" as any,

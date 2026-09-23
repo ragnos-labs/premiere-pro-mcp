@@ -555,9 +555,30 @@ async function withBridgeWriter(
 export function reconcileBridgeCommand(options?: BridgeOptions): CommandResult {
   const tempDir = getTempDir(options);
   const recordFile = bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE);
-  if (!existsSync(recordFile)) return { success: true, data: { state: "clear" } };
+  ensurePrivateBridgeDirectory(tempDir);
+  if (!existsSync(recordFile)) {
+    const lockFile = bridgePath(tempDir, BRIDGE_WRITER_LOCK_FILE);
+    if (existsSync(lockFile)) {
+      try {
+        const lock = JSON.parse(readFileSync(lockFile, "utf-8")) as { pid?: number };
+        if (!Number.isInteger(lock.pid) || !lock.pid || lock.pid < 1) throw new Error("Invalid writer PID");
+        try { process.kill(lock.pid, 0); return { success: false, outcome: "uncertain", error: "Bridge writer is still alive" }; }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+        // Publication always follows the durable command record, so no record means no dispatch.
+        safeUnlink(lockFile);
+      } catch { return { success: false, outcome: "uncertain", error: "Bridge writer ownership cannot be reconciled" }; }
+    }
+    return { success: true, data: { state: "clear" } };
+  }
   try {
-    const record = JSON.parse(readFileSync(recordFile, "utf-8")) as { commandFile?: string; responseFile?: string };
+    const record = JSON.parse(readFileSync(recordFile, "utf-8")) as { commandFile?: string; responseFile?: string; pid?: number; pending?: boolean };
+    if (record.pending) {
+      if (!Number.isInteger(record.pid) || !record.pid || record.pid < 1) throw new Error("Invalid writer PID");
+      try { process.kill(record.pid, 0); return { success: false, outcome: "uncertain", error: "Bridge writer is still running" }; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    }
+    if (!record.responseFile || dirname(record.responseFile) !== tempDir || !/^res_[a-f0-9-]+\.json$/.test(basename(record.responseFile)) || record.commandFile !== join(tempDir, basename(record.responseFile).replace(/^res_/, "cmd_").replace(/\.json$/, ".jsx"))) throw new Error("Invalid retained command paths");
+    if (existsSync(record.responseFile) && (lstatSync(record.responseFile).isSymbolicLink() || statSync(record.responseFile).size > MAX_BRIDGE_RESPONSE_BYTES)) throw new Error("Invalid response file");
     if (!record.responseFile || !existsSync(record.responseFile)) {
       return {
         success: false,
@@ -623,6 +644,7 @@ async function sendCommandUnchecked(
     // renameSync is atomic when both paths are in the bridge directory.
     writeFileSync(stagedCmdFile, `${ensureHelpers(tempDir, options?.helpers)}
 ${script}`, "utf-8");
+    writeFileSync(bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE), JSON.stringify({ commandFile: cmdFile, responseFile: resFile, pid: process.pid, pending: true }), { encoding: "utf-8", mode: 0o600 });
     renameSync(stagedCmdFile, cmdFile);
 
     const result = await pollForResponse(resFile, busyFile, timeoutMs);
@@ -633,6 +655,7 @@ ${script}`, "utf-8");
     return result;
   } finally {
     if (!uncertain) {
+      safeUnlink(bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE));
       safeUnlink(stagedCmdFile);
       safeUnlink(cmdFile);
       safeUnlink(resFile);
@@ -700,6 +723,7 @@ async function sendRawCommandUnchecked(
   try {
     writeFileSync(stagedCmdFile, `${ensureHelpers(tempDir, options?.helpers)}
 ${script}`, "utf-8");
+    writeFileSync(bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE), JSON.stringify({ commandFile: cmdFile, responseFile: resFile, pid: process.pid, pending: true }), { encoding: "utf-8", mode: 0o600 });
     renameSync(stagedCmdFile, cmdFile);
     const result = await pollForResponse(resFile, busyFile, timeoutMs);
     uncertain = result.outcome === "uncertain";
@@ -709,6 +733,7 @@ ${script}`, "utf-8");
     return result;
   } finally {
     if (!uncertain) {
+      safeUnlink(bridgePath(tempDir, BRIDGE_UNCERTAIN_FILE));
       safeUnlink(stagedCmdFile);
       safeUnlink(cmdFile);
       safeUnlink(resFile);
@@ -846,7 +871,7 @@ export function cleanupTempDir(options?: BridgeOptions): void {
   // Validate before enumerating or deleting. Startup cleanup must never follow
   // an attacker-controlled symlink/junction or adopt an untrusted directory.
   ensurePrivateBridgeDirectory(tempDir);
-  if (hasUncertainBridgeCommand(tempDir)) return;
+  if (existsSync(bridgePath(tempDir, BRIDGE_WRITER_LOCK_FILE)) || hasUncertainBridgeCommand(tempDir)) return;
 
   try {
     const files = readdirSync(tempDir);

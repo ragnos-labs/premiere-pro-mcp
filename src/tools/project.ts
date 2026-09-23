@@ -20,7 +20,7 @@ export function getProjectTools(bridgeOptions: BridgeOptions) {
           var project = app.project;
           if (!project) return __error("No project is open");
           var saveResult = project.save();
-          if (saveResult !== true && saveResult !== 1) return __error("Premiere did not confirm that the project was saved.");
+          if (saveResult !== 0) return __error("Premiere did not confirm that the project was saved.");
           return __result({ saved: true, verified: true, name: project.name, path: project.path });
         `);
         return sendCommand(script, bridgeOptions);
@@ -45,7 +45,7 @@ export function getProjectTools(bridgeOptions: BridgeOptions) {
           var project = app.project;
           if (!project) return __error("No project is open");
           var saveResult = project.saveAs("${escapeForExtendScript(args.path)}");
-          if (saveResult !== true && saveResult !== 1) return __error("Premiere did not confirm that the project was saved to the requested path.");
+          if (saveResult !== 0) return __error("Premiere did not confirm that the project was saved to the requested path.");
           if (String(project.path) !== "${escapeForExtendScript(args.path)}") return __error("Premiere saved the project but did not bind the requested project path.");
           return __result({ saved: true, verified: true, path: project.path });
         `);
@@ -521,7 +521,7 @@ export function getProjectTools(bridgeOptions: BridgeOptions) {
 
     add_custom_metadata_field: {
       description:
-        "Add a custom metadata field to the project's metadata schema. This creates a schema/column definition only; it does not set a per-item value. Use set_metadata with complete Project Metadata XML and readback to update a value.",
+        "Add a custom metadata field to the project's metadata schema. This creates a schema/column definition only; it does not set a per-item value. Use set_metadata field_name/value or complete Project Metadata XML with readback to update a value.",
       parameters: {
         type: "object" as const,
         properties: {
@@ -555,7 +555,7 @@ export function getProjectTools(bridgeOptions: BridgeOptions) {
             label: "${escapeForExtendScript(args.field_label)}",
             outcome: "committed_unverified",
             verificationBoundary: "Premiere does not expose a schema-field enumeration readback through the legacy CEP API",
-            perItemValue: "Use set_metadata with complete Project Metadata XML and updated_fields."
+            perItemValue: "Use set_metadata with field_name/value or complete Project Metadata XML and updated_fields."
           });
         `);
         return sendCommand(script, bridgeOptions);
@@ -819,7 +819,7 @@ export function getProjectTools(bridgeOptions: BridgeOptions) {
 
     get_project_panel_metadata: {
       description:
-        "Get the current project panel metadata/column configuration as XML",
+        "Get the current Project-panel column layout as XML. This is schema/layout configuration, not per-item Scene/Shot/Take values; use inspect_project_panel_metadata_uxp item_columns or get_metadata for those.",
       parameters: {},
       handler: async () => {
         const script = buildToolScript(`

@@ -12,7 +12,7 @@ Free, MIT licensed, local-first, and published to npm as [`premiere-pro-mcp`](ht
 
 [Website](https://premiere-pro-mcp.com/) · [Recorded demo](https://premiere-pro-mcp.com/demo/) · [Compare servers](https://premiere-pro-mcp.com/compare/) · [Setup guides](https://premiere-pro-mcp.com/blog/how-to-set-up-premiere-pro-mcp/) · [Search tools](https://premiere-pro-mcp.com/tools/) · [Troubleshooting](https://premiere-pro-mcp.com/docs/troubleshooting/) · [Release facts](https://premiere-pro-mcp.com/facts/)
 
-Development source: 382 core tools across 56 modules, 4 resources, and 18 guided workflows. A connected UXP host adds 95 capability-gated tools.
+Development source: 382 core tools across 56 modules, 4 resources, and 19 guided workflows. A connected UXP host adds 95 capability-gated tools.
 
 The [completed AE render handoff](docs/after-effects-render-handoff.md) previews and confirms importing one finished render into an existing Premiere bin, with host and file rechecks and an import receipt.
 
@@ -50,7 +50,7 @@ The [completed AE render handoff](docs/after-effects-render-handoff.md) previews
   - [Configure your MCP client](#3-configure-your-mcp-client)
   - [Verify the bridge in Premiere Pro](#4-verify-the-bridge-in-premiere-pro)
 - [Clients and capability coverage](#codex-plugin)
-  - [Codex plugin](#codex-plugin) · [Claude](#claude) · [GPT-6 Astra tool discovery](#gpt-6-astra-and-agent-tool-discovery)
+  - [Codex plugin](#codex-plugin) · [Claude](#claude) · [GPT-6 Astra tool discovery](#gpt-6-astra-and-agent-tool-discovery) · [Claude Fable 5.1](#claude-fable-51)
   - [Windows and macOS capability coverage](#windows-and-macos-capability-coverage)
   - [After Effects MOGRT studio](#after-effects-mogrt-studio)
   - [Collaboration and AI feature boundaries](#collaboration-and-ai-feature-boundaries)
@@ -108,10 +108,10 @@ The current source exposes 382 core tools for supported workflow steps spanning 
 
 <a id="latest-release"></a>
 
-### Latest release: 1.16.1
+### Latest release: 1.16.3
 
-The published v1.16.0 npm artifact contains **373 core tools**, 371 in its default profile,
-and 466 with a compatible UXP connection. The development catalog above can include
+The published v1.16.3 npm artifact contains **381 core tools**, 379 in its default profile,
+and 474 with a compatible UXP connection. The development catalog above can include
 unreleased work. See the [versioned facts and package provenance](https://premiere-pro-mcp.com/facts/).
 
 ### Try a bounded workflow
@@ -160,7 +160,7 @@ if the connection is unavailable.
   local Premiere processes. See the generated [supported action catalog](docs/supported-actions.md)
   for individual capability and verification contracts.
 
-See the [v1.16.1 release notes](https://github.com/leancoderkavy/premiere-pro-mcp/releases/tag/v1.16.1)
+See the [v1.16.3 release notes](https://github.com/leancoderkavy/premiere-pro-mcp/releases/tag/v1.16.3)
 for complete details. Live installation in Premiere Pro still requires host verification.
 
 ### Current MCP protocol support
@@ -208,7 +208,7 @@ their bins, media rules, and organization rules before a facility uses one.
 > ### Install the published package (verify the name)
 >
 > ```bash
-> npm i -g premiere-pro-mcp@1.16.1
+> npm i -g premiere-pro-mcp@1.16.3
 > ```
 >
 > This repository publishes only **`premiere-pro-mcp`**. A differently named package (`adobe-premiere-pro-mcp`) may also declare a `premiere-pro-mcp` executable. Before configuring a client, confirm:
@@ -216,7 +216,7 @@ their bins, media rules, and organization rules before a facility uses one.
 > | Check | Expected |
 > | --- | --- |
 > | Package name | `premiere-pro-mcp` (not `adobe-premiere-pro-mcp`) |
-> | Version | `1.16.1` |
+> | Version | `1.16.3` |
 > | Homepage / repo | https://premiere-pro-mcp.com/ · https://github.com/leancoderkavy/premiere-pro-mcp |
 >
 > ```bash
@@ -229,9 +229,9 @@ their bins, media rules, and organization rules before a facility uses one.
 
 ### Easiest supported path: Claude Desktop
 
-1. Download the current [Claude Desktop bundle (`.mcpb`)](https://github.com/leancoderkavy/premiere-pro-mcp/releases/download/v1.16.1/premiere-pro-mcp-1.16.1.mcpb).
+1. Download the current [Claude Desktop bundle (`.mcpb`)](https://github.com/leancoderkavy/premiere-pro-mcp/releases/download/v1.16.3/premiere-pro-mcp-1.16.3.mcpb).
 2. In Claude Desktop, open **Settings > Extensions > Advanced settings > Install Extension**, select the downloaded bundle, and restart Claude Desktop.
-3. Download the separate [signed Premiere connector (`.zxp`)](https://github.com/leancoderkavy/premiere-pro-mcp/releases/download/v1.16.1/MCPBridgeCEP.zxp). Open it with your trusted ZXP installer. If your computer has no ZXP installer, use the npm connector installer in **Advanced setup** below.
+3. Download the separate [signed Premiere connector (`.zxp`)](https://github.com/leancoderkavy/premiere-pro-mcp/releases/download/v1.16.3/MCPBridgeCEP.zxp). Open it with your trusted ZXP installer. If your computer has no ZXP installer, use the npm connector installer in **Advanced setup** below.
 4. Restart Premiere, open a project, then open **Window > Extensions > MCP for Adobe Premiere Pro**.
 5. In Claude, enter: `Safely check my Premiere connection with verify_premiere_connection. Make no changes.`
 
@@ -488,6 +488,9 @@ Add to `.cursor/mcp.json` in your project or global config:
 }
 ```
 
+After the server is enabled, select Claude Fable 5.1 in Cursor when you want a
+longer-horizon session. See [Claude Fable 5.1 workflows](docs/claude-fable-5-1.md).
+
 </details>
 
 <details>
@@ -580,6 +583,26 @@ npm run build:claude
 Install the resulting file from `artifacts/` through **Settings > Extensions >
 Advanced settings > Install Extension**. The Premiere CEP bridge must still be
 installed separately.
+
+### Claude Fable 5.1
+
+Use Cursor, Claude Desktop, or Claude Code with Claude Fable 5.1
+(`claude-fable-5-1`) when your account has access. Model selection belongs to the
+client; this server does not run an Anthropic model. Fable 5.1 is optional:
+other Claude models can call the same MCP tools. If Cursor Privacy Mode or an
+Enterprise plan is enabled, an admin must approve Anthropic's Fable data-retention
+policy before the model is available.
+
+The server supplies session-aware workflow instructions and bounded tool discovery:
+call `get_capabilities` with `{"tool_query":"transcript","tool_limit":10}` to
+find relevant operations, their descriptions, and backend requirements. Keep
+Premiere mutations serialized even in a long Fable 5.1 session. Image review of
+returned frames is not playback or delivery proof.
+
+See [Claude Fable 5.1 workflows](docs/claude-fable-5-1.md) for connection order,
+privacy boundaries, evidence retrieval, Cursor's Opus fallback, and the division
+between MCP and client capabilities. The public walkthrough is
+[How to Use Claude Fable 5.1 with MCP for Adobe Premiere Pro](https://premiere-pro-mcp.com/blog/claude-fable-5-1-premiere-pro-mcp/).
 
 ### Windows and macOS capability coverage
 
@@ -760,7 +783,7 @@ The bounded UXP migration surface also exposes guarded static Color effect-param
 
 The bounded UXP migration surface also exposes guarded typed Project metadata schema-field creation. It requires the exact inspected active-project identity and 12 KiB-bounded panel XML, an explicit confirmation and operation ID, and serializes this bridge's schema and panel-replacement calls per project. Adobe provides no atomic compare-and-set or field-level schema getter: native acceptance and a changed panel XML are evidence only, so the command always returns `committed_unverified` and does not claim field presence, persistence, UI results, Undo, cancellation, or licensed-host validation.
 
-The panel now requests access to one operator-selected workspace instead of declaring full filesystem access. Choose the folder in the panel before invoking a path-based UXP workflow. Media, relink, preset, export, and Source Monitor file paths must remain inside it; the persistent capability token and native root path are never returned over MCP. Lexical containment alone cannot exclude symlink, junction, or reparse-point escapes, and Adobe's request-scoped UXP filesystem API does not document canonical-path resolution. Builds without a host-supplied canonical resolver therefore advertise path-based UXP commands as unsupported and fail closed at invocation; use the existing CEP fallback for those operations.
+The panel now requests access to one operator-selected workspace instead of declaring full filesystem access. Choose the folder in the panel before invoking a path-based UXP workflow. Media, relink, preset, export, and Source Monitor file paths must remain inside it; the persistent capability token and native root path are never returned over MCP. After a folder is granted, path-based commands resolve each native path through that folder's Entry tree and compare the host `nativePath` against the approved root, so symlink or junction targets outside the workspace still fail closed. If the host Entry cannot be walked and no resolver is supplied, those commands stay unsupported and the CEP fallback remains the path-based compatibility route.
 
 Native transcript editing starts with a read-only, revision-locked planning flow. Use
 `get_clip_transcript_uxp` to export the transcript Premiere generated for a source
@@ -1147,13 +1170,13 @@ Track targeting, batch operations, markers, audio levels, motion/transform, meta
 
 ## MCP Resources
 
-The server exposes fourteen LLM context resources and eleven workflow prompts:
+The server exposes fourteen LLM context resources and nineteen workflow prompts:
 
 | Resource URI | Description |
 | :----------- | :---------- |
-| `config://premiere-instructions` | Best practices: workflow order, timeline rules, effect tips, error handling |
+| `config://premiere-instructions` | Best practices: workflow order, metadata layers, timeline rules, error handling |
 | `config://extendscript-reference` | Complete ExtendScript API reference for writing custom scripts |
-| `config://premiere-workflows` | Machine-readable catalog for rough cuts, dialogue cleanup, captions, and delivery |
+| `config://premiere-workflows` | Machine-readable catalog for rough cuts, metadata review, dialogue cleanup, captions, and delivery |
 | `config://premiere-project-context` | Revisioned local project-context indexing and retrieval workflow |
 | `premiere://project/info` | Fresh, path-redacted current-project and active-sequence summary |
 | `premiere://project/sequences` | Bounded sequence inventory with stable Premiere IDs |
@@ -1164,7 +1187,7 @@ The server exposes fourteen LLM context resources and eleven workflow prompts:
 | `premiere://effects/applied` | Bounded active-timeline component inventory |
 | `premiere://transitions/available` | Bounded video/audio transition catalog for planning |
 | `premiere://export/presets` | Bounded export-preset names and formats, without native paths |
-| `premiere://project/metadata` | Read-only project and active-timeline summary, without paths or timestamps |
+| `premiere://project/metadata` | Path-redacted project and active-timeline summary — not XMP or Project Metadata XML |
 
 The ten `premiere://` snapshots are read-only CEP bridge requests. They include a
 revision token for stale-state detection and omit native media, project-tree, preset,
@@ -1377,6 +1400,7 @@ premiere-pro-mcp/
 ├── Dockerfile                   # Multi-stage Docker build for Fly.io
 ├── fly.toml                     # Fly.io deployment config
 ├── RESEARCH.md                  # API research and implementation status
+├── AGENTS.md                    # IDE / coding-agent map
 ├── CONTRIBUTING.md              # Contribution guidelines
 ├── CHANGELOG.md                 # Version history
 └── LICENSE                      # MIT License
@@ -1471,6 +1495,8 @@ Premiere Pro; its npm package is `premiere-pro-mcp`.
 Install the [Claude Desktop bundle](#easiest-supported-path-claude-desktop), install
 the separate signed Premiere connector, restart Premiere, then ask Claude to run
 `verify_premiere_connection` with no changes. That first prompt is read-only.
+Claude Fable 5.1 is an optional client model for Cursor, Claude Desktop, or Claude
+Code; see [Claude Fable 5.1 workflows](docs/claude-fable-5-1.md).
 
 **Where is the GitHub repository?**
 <https://github.com/leancoderkavy/premiere-pro-mcp>. Releases, the signed `.zxp`
@@ -1596,6 +1622,7 @@ buy prioritized support, roadmap influence, or any claim about unverified host b
 ## Contributing
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+AI agents and IDE assistants should read [AGENTS.md](AGENTS.md).
 
 The evidence-backed [next improvement pull-request roadmap](docs/next-improvement-pr-roadmap.md)
 breaks the proposed feature, protocol, reliability, and performance work into ten

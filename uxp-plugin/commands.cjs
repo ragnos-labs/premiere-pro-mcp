@@ -69,7 +69,7 @@
     let workflowApi = deps.Workflows || (typeof globalThis !== "undefined" && globalThis.PremiereMcpWorkflows);
     if (!workflowApi && typeof require === "function") workflowApi = require("./workflows.cjs");
     if (workflowApi && typeof workflowApi.createWorkflowDefinitions === "function") {
-      Object.assign(definitions, workflowApi.createWorkflowDefinitions({ ppro, Protocol, workspace }));
+      Object.assign(definitions, workflowApi.createWorkflowDefinitions({ ppro, Protocol, workspace, xmp: deps.xmp }));
     }
     let projectItemColorLabelLocksApi = deps.ProjectItemColorLabelLocks || (typeof globalThis !== "undefined" && globalThis.PremiereMcpProjectItemColorLabelLocks);
     if (!projectItemColorLabelLocksApi && typeof require === "function") projectItemColorLabelLocksApi = require("./project-item-color-label-locks.cjs");
@@ -239,7 +239,7 @@
         if (definition.conditionalWorkspace) commands[name].workspaceRequired = "path_variant_only";
         if (definition.targetCapabilityProbe) commands[name].targetCapabilityProbe = "invocation";
         if (!apiSupported) commands[name].reason = "Required Premiere UXP API is unavailable in this host";
-        else if (!pathValidationSupported) commands[name].reason = "This UXP host cannot canonically validate native paths; use the CEP fallback for path-based workflows";
+        else if (!pathValidationSupported) commands[name].reason = "canonical path validation is not implemented in this build; use the CEP fallback for path-based workflows";
       }
       return {
         backend: "uxp", protocolVersion: Protocol.PROTOCOL_VERSION, hostMinVersion: "25.6.0",

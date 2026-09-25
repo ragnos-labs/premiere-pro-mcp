@@ -11,6 +11,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Claude Fable 5.1 client workflow guidance for Cursor and other compatible MCP
   clients, covering model selection, data-retention opt-in, tool discovery, and
   serialized Premiere verification.
+- `validate_export_preset` accepts `host_check: false` to validate a preset file
+  (exists, readable, non-empty `.epr`, no Same as Project destination) without
+  Premiere, and reports `valid` and `readable`.
+- `export_sequence` accepts `timeout_seconds` (default 900) for long
+  synchronous renders.
+
+### Fixed
+
+- `export_sequence` no longer reports a completed direct export as failed when
+  Premiere returns `"No Error"` or another non-boolean value. Success now
+  requires a fresh output file and returns `outcome: "completed"`; a missing
+  file, a stale file, or a bridge timeout returns an explicit
+  `Export outcome uncertain` error with a JSON acknowledgement.
 
 ## [1.16.3] - 2026-09-18
 

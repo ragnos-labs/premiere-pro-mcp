@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -300,8 +300,9 @@ describe("Premiere finishing reliability", () => {
 
     expect(save).toContain("saveResult !== 0 && saveResult !== true");
     expect(saveAs).toContain("project.path");
-    expect(exported).toContain("exportResult !== true && exportResult !== 1");
-    expect(exported).toContain('outcome: "committed_unverified"');
+    expect(exported).toContain("var hostAccepted = hostError === null && (exportResult === true || exportResult === 1");
+    expect(exported).toContain('outcome: "completed"');
+    expect(exported).toContain('outcome: "uncertain"');
   });
 
   it("executes save handlers with documented success and failure codes", async () => {
@@ -1036,5 +1037,189 @@ describe("issue #503 — trim_clip partial write rollback prevents clip corrupti
     const script = await scriptFor(timeline.trim_clip, { node_id: "clip-1", new_in_seconds: 0.3 });
 
     expect(script).toContain("the clip could not be re-found for rollback");
+  });
+});
+
+describe("export_sequence acknowledgement reflects the real render outcome", () => {
+  const exportTools = getExportTools(bridgeOptions);
+
+  interface FakeFile { sizeBytes: number; modifiedMs: number }
+
+  /** Execute the generated export script against a fake host and file system. */
+  async function runDirectExport(options: {
+    before?: FakeFile;
+    hostReturn?: () => unknown;
+    writes?: FakeFile | null;
+  }) {
+    const outputPath = "/exports/final.mp4";
+    const script = await scriptFor(exportTools.export_sequence, { output_path: outputPath, preset_path: temporaryPreset() });
+    const files = new Map<string, FakeFile>();
+    if (options.before) files.set(outputPath, options.before);
+    class File {
+      constructor(private readonly path: string) {}
+      get exists() { return files.has(this.path); }
+      get length() { return files.get(this.path)?.sizeBytes ?? 0; }
+      get modified() { const f = files.get(this.path); return f ? new Date(f.modifiedMs) : null; }
+      get parent() { return { exists: true, toString: () => "/exports" }; }
+    }
+    const sequence = {
+      exportAsMediaDirect: (path: string) => {
+        if (options.writes) files.set(path, options.writes);
+        return options.hostReturn ? options.hostReturn() : true;
+      },
+    };
+    const raw = runInNewContext(`${getHelpersSource()}\n${script}`, {
+      app: { project: { activeSequence: sequence }, encoder: { ENCODE_ENTIRE: 0, ENCODE_WORKAREA: 1 } },
+      File,
+    });
+    return JSON.parse(String(raw)) as { success: boolean; data?: Record<string, unknown>; error?: string };
+  }
+
+  function acknowledgementFrom(error: string | undefined) {
+    expect(error).toMatch(/^Export outcome uncertain: /);
+    const marker = "Acknowledgement: ";
+    return JSON.parse(error!.slice(error!.indexOf(marker) + marker.length)) as Record<string, unknown>;
+  }
+
+  it("reports completion when Premiere returns \"No Error\" and the file was written", async () => {
+    // Shipping hosts return the string "No Error" for a finished render. The old
+    // check accepted only true or 1 and reported this success as a failure.
+    const result = await runDirectExport({ hostReturn: () => "No Error", writes: { sizeBytes: 4096, modifiedMs: 2_000 } });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      acknowledgement: "export_completed",
+      outcome: "completed",
+      mode: "direct",
+      queued: false,
+      completed: true,
+      verified: true,
+      verification: "output_file_written",
+      outputPath: "/exports/final.mp4",
+      outputFile: { exists: true, sizeBytes: 4096 },
+      replacedExistingFile: false,
+      hostReturn: "No Error",
+      hostReturnType: "string",
+    });
+  });
+
+  it("reports completion from file evidence when the host return value is ambiguous", async () => {
+    const result = await runDirectExport({ hostReturn: () => undefined, writes: { sizeBytes: 10, modifiedMs: 2_000 } });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ outcome: "completed", hostReturn: "undefined", hostReturnType: "undefined" });
+  });
+
+  it("stays uncertain when Premiere claims success but no new file exists", async () => {
+    const missing = await runDirectExport({ hostReturn: () => true, writes: null });
+    expect(missing.success).toBe(false);
+    expect(acknowledgementFrom(missing.error)).toMatchObject({
+      acknowledgement: "export_outcome_uncertain",
+      outcome: "uncertain",
+      reason: "no_fresh_output",
+      queued: false,
+      completed: false,
+      verified: false,
+      outputPath: "/exports/final.mp4",
+      outputFile: { exists: false, sizeBytes: 0 },
+    });
+
+    // An unchanged file left over from an earlier render is not evidence.
+    const stale = await runDirectExport({ before: { sizeBytes: 50, modifiedMs: 1_000 }, hostReturn: () => true, writes: null });
+    expect(acknowledgementFrom(stale.error)).toMatchObject({ outcome: "uncertain", outputFile: { exists: true, sizeBytes: 50 } });
+  });
+
+  it("stays uncertain when Premiere reports failure but a new file appeared", async () => {
+    const result = await runDirectExport({ hostReturn: () => false, writes: { sizeBytes: 5, modifiedMs: 2_000 } });
+
+    expect(result.success).toBe(false);
+    expect(acknowledgementFrom(result.error)).toMatchObject({ outcome: "uncertain", reason: "host_rejected_with_output", hostReturn: "false" });
+  });
+
+  it("fails clearly when Premiere throws and writes nothing", async () => {
+    const result = await runDirectExport({ hostReturn: () => { throw new Error("Illegal Parameter"); }, writes: null });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/^Premiere rejected the direct export \(Error: Illegal Parameter\)/);
+    expect(result.error).not.toMatch(/uncertain/);
+  });
+
+  it("gives a long synchronous render a real timeout and keeps a bridge timeout explicitly uncertain", async () => {
+    mockedSendCommand.mockClear();
+    await exportTools.export_sequence.handler({ output_path: "/tmp/never-written-export.mp4", preset_path: temporaryPreset() });
+    expect(mockedSendCommand.mock.calls[0][1]).toMatchObject({ timeoutMs: 900_000 });
+
+    mockedSendCommand.mockClear();
+    await exportTools.export_sequence.handler({ output_path: "/tmp/never-written-export.mp4", preset_path: temporaryPreset(), timeout_seconds: 60 });
+    expect(mockedSendCommand.mock.calls[0][1]).toMatchObject({ timeoutMs: 60_000 });
+
+    mockedSendCommand.mockClear();
+    const invalid = await exportTools.export_sequence.handler({ output_path: "/tmp/x.mp4", timeout_seconds: 5 });
+    expect(invalid).toMatchObject({ success: false, error: expect.stringMatching(/timeout_seconds must be a number/) });
+    expect(mockedSendCommand).not.toHaveBeenCalled();
+
+    mockedSendCommand.mockResolvedValueOnce({ success: false, outcome: "uncertain", error: "Premiere accepted the script but did not finish within 3600000ms." });
+    const timedOut = await exportTools.export_sequence.handler({ output_path: "/tmp/never-written-export.mp4", preset_path: temporaryPreset() });
+    expect(timedOut.success).toBe(false);
+    expect(timedOut.outcome).toBe("uncertain");
+    expect(timedOut.error).toMatch(/reconcile_bridge_command/);
+    expect(acknowledgementFrom(timedOut.error)).toMatchObject({
+      outcome: "uncertain",
+      reason: "bridge_timeout",
+      completed: false,
+      verified: false,
+      timeoutSeconds: 900,
+      outputFileObserved: { exists: false },
+    });
+  });
+
+  it("labels an AME queue handoff as queued work that is not completed", async () => {
+    const script = await scriptFor(exportTools.add_to_render_queue, { output_path: "/tmp/render.mp4", preset_path: temporaryPreset() });
+
+    expect(script).toContain('mode: "ame_queue"');
+    expect(script).toContain("completed: false");
+  });
+});
+
+describe("validate_export_preset can check a preset file without Premiere", () => {
+  const exportTools = getExportTools(bridgeOptions);
+
+  it("reports a readable .epr as valid without contacting the bridge when host_check is false", async () => {
+    mockedSendCommand.mockClear();
+    const preset = temporaryPreset();
+    const result = await exportTools.validate_export_preset.handler({ preset_path: preset, host_check: false });
+
+    expect(mockedSendCommand).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      data: { valid: true, path: preset, exists: true, regularFile: true, readable: true, sizeBytes: 10, hostValidated: false },
+    });
+  });
+
+  it("rejects missing, wrong-extension, and unreadable presets", async () => {
+    const preset = temporaryPreset();
+    expect(await exportTools.validate_export_preset.handler({ preset_path: `${preset}.missing.epr`, host_check: false }))
+      .toMatchObject({ success: false, error: expect.stringMatching(/does not exist/) });
+    expect(await exportTools.validate_export_preset.handler({ preset_path: preset.replace(/\.epr$/, ".txt"), host_check: false }))
+      .toMatchObject({ success: false, error: expect.stringMatching(/\.epr extension/) });
+
+    if (process.platform !== "win32" && process.getuid?.() !== 0) {
+      chmodSync(preset, 0o000);
+      try {
+        expect(await exportTools.validate_export_preset.handler({ preset_path: preset, host_check: false }))
+          .toMatchObject({ success: false, error: expect.stringMatching(/not readable/) });
+      } finally {
+        chmodSync(preset, 0o600);
+      }
+    }
+  });
+
+  it("still asks Premiere for the output extension by default", async () => {
+    mockedSendCommand.mockClear();
+    mockedSendCommand.mockResolvedValueOnce({ success: true, data: { outputExtension: "mp4" } });
+    const result = await exportTools.validate_export_preset.handler({ preset_path: temporaryPreset() });
+
+    expect(mockedSendCommand).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ success: true, data: { valid: true, outputExtension: "mp4", hostValidated: true } });
   });
 });

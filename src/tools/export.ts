@@ -328,20 +328,65 @@ export function inspectExportPresetFile(presetPath: string) {
   if (!stats.isFile()) throw new Error(`Export preset path is not a regular file: ${path}`);
   if (stats.size === 0) throw new Error(`Export preset is empty: ${path}`);
   if (stats.size > MAX_EXPORT_PRESET_BYTES) throw new Error(`Export preset exceeds ${MAX_EXPORT_PRESET_BYTES} bytes`);
-  const contents = readFileSync(path);
+  let contents: Buffer;
+  try {
+    contents = readFileSync(path);
+  } catch (error) {
+    throw new Error(`Export preset is not readable: ${path} (${(error as NodeJS.ErrnoException).code ?? String(error)})`);
+  }
   if (exportPresetUsesSameAsProject(contents)) {
     throw new Error(
       "This Adobe Media Encoder preset uses a Same as Project output destination. Premiere copies the project to a scratch folder for AME, so the encoded file will not land at the requested output_path. Use a preset with an explicit output location.",
     );
   }
-  return { path, exists: true as const, regularFile: true as const, sizeBytes: stats.size, modifiedAt: stats.mtime.toISOString() };
+  return { path, exists: true as const, regularFile: true as const, readable: true as const, sizeBytes: stats.size, modifiedAt: stats.mtime.toISOString() };
+}
+
+export const DEFAULT_DIRECT_EXPORT_TIMEOUT_SECONDS = 900;
+export const MIN_DIRECT_EXPORT_TIMEOUT_SECONDS = 30;
+export const MAX_DIRECT_EXPORT_TIMEOUT_SECONDS = 14_400;
+
+function observeOutputFile(outputPath: string) {
+  try {
+    const stats = statSync(resolve(outputPath));
+    return { exists: true, sizeBytes: stats.size, modifiedAt: stats.mtime.toISOString() };
+  } catch {
+    return { exists: false, sizeBytes: 0, modifiedAt: null };
+  }
+}
+
+/**
+ * The bridge stopped waiting for Premiere's reply. exportAsMediaDirect blocks
+ * until the render ends, so Premiere may still be writing the file: a file on
+ * disk here is not evidence of a finished render. Stay uncertain.
+ */
+export function directExportTimeoutMessage(outputPath: string, timeoutSeconds: number, bridgeError?: string): string {
+  const acknowledgement = {
+    acknowledgement: "export_outcome_uncertain",
+    outcome: "uncertain",
+    reason: "bridge_timeout",
+    mode: "direct",
+    queued: false,
+    completed: false,
+    verified: false,
+    outputPath: resolve(outputPath),
+    timeoutSeconds,
+    outputFileObserved: observeOutputFile(outputPath),
+    bridgeError: bridgeError ?? null,
+  };
+  return (
+    "Export outcome uncertain: Premiere did not reply within the export timeout, so the render may still be running or may have finished. " +
+    "Do not retry the export. Call reconcile_bridge_command to read Premiere's retained reply, and treat a file at outputPath as unverified until then. " +
+    `Acknowledgement: ${JSON.stringify(acknowledgement)}`
+  );
 }
 
 export function getExportTools(bridgeOptions: BridgeOptions) {
   return {
     validate_export_preset: {
       description:
-        "Validate that an Adobe Media Encoder .epr preset exists and ask the active Premiere sequence which output extension it produces",
+        "Validate that an Adobe Media Encoder .epr preset exists, is a readable non-empty regular file, and does not use a Same as Project destination. " +
+        "By default it also asks the active Premiere sequence which output extension the preset produces; pass host_check: false to run only the local file checks without Premiere.",
       parameters: {
         type: "object" as const,
         properties: {
@@ -349,15 +394,22 @@ export function getExportTools(bridgeOptions: BridgeOptions) {
             type: "string",
             description: "Full path to an Adobe Media Encoder export preset (.epr)",
           },
+          host_check: {
+            type: "boolean",
+            description: "Also ask the active Premiere sequence for the preset output extension (default: true). False checks only the local file.",
+          },
         },
         required: ["preset_path"],
       },
-      handler: async (args: { preset_path: string }) => {
+      handler: async (args: { preset_path: string; host_check?: boolean }) => {
         let file;
         try {
           file = inspectExportPresetFile(args.preset_path);
         } catch (error) {
           return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
+        if (args.host_check === false) {
+          return { success: true, data: { valid: true, ...file, hostValidated: false } };
         }
         const script = buildToolScript(`
           var seq = app.project.activeSequence;
@@ -372,6 +424,7 @@ export function getExportTools(bridgeOptions: BridgeOptions) {
         return {
           success: true,
           data: {
+            valid: true,
             ...file,
             ...((result.data ?? {}) as Record<string, unknown>),
             hostValidated: true,
@@ -673,7 +726,11 @@ export function getExportTools(bridgeOptions: BridgeOptions) {
     },
 
     export_sequence: {
-      description: "Export the active sequence using Adobe Media Encoder",
+      description:
+        "Render the active sequence directly to a file with Sequence.exportAsMediaDirect (synchronous, not queued). " +
+        "Success means Premiere returned and a fresh output file was observed at output_path (outcome \"completed\"). " +
+        "When Premiere's reply or the output file cannot confirm the render, the call fails with an error that starts with " +
+        "\"Export outcome uncertain\" and carries a JSON acknowledgement; check output_path and call reconcile_bridge_command instead of retrying.",
       parameters: {
         type: "object" as const,
         properties: {
@@ -689,10 +746,16 @@ export function getExportTools(bridgeOptions: BridgeOptions) {
             type: "boolean",
             description: "Export only the work area (default: false, exports entire sequence)",
           },
+          timeout_seconds: {
+            type: "number",
+            description:
+              `How long to wait for Premiere to finish the synchronous render before reporting an uncertain outcome (default ${DEFAULT_DIRECT_EXPORT_TIMEOUT_SECONDS}, range ${MIN_DIRECT_EXPORT_TIMEOUT_SECONDS}-${MAX_DIRECT_EXPORT_TIMEOUT_SECONDS}). ` +
+              "While Premiere reports the script as busy, the bridge keeps waiting up to four times this value.",
+          },
         },
         required: ["output_path"],
       },
-      handler: async (args: { output_path: string; preset_path?: string; work_area_only?: boolean }) => {
+      handler: async (args: { output_path: string; preset_path?: string; work_area_only?: boolean; timeout_seconds?: number }) => {
         if (args.preset_path) {
           try {
             inspectExportPresetFile(args.preset_path);
@@ -700,35 +763,136 @@ export function getExportTools(bridgeOptions: BridgeOptions) {
             return { success: false, error: error instanceof Error ? error.message : String(error) };
           }
         }
+        let timeoutSeconds = DEFAULT_DIRECT_EXPORT_TIMEOUT_SECONDS;
+        if (args.timeout_seconds !== undefined) {
+          if (
+            typeof args.timeout_seconds !== "number" ||
+            !Number.isFinite(args.timeout_seconds) ||
+            args.timeout_seconds < MIN_DIRECT_EXPORT_TIMEOUT_SECONDS ||
+            args.timeout_seconds > MAX_DIRECT_EXPORT_TIMEOUT_SECONDS
+          ) {
+            return {
+              success: false,
+              error: `timeout_seconds must be a number from ${MIN_DIRECT_EXPORT_TIMEOUT_SECONDS} to ${MAX_DIRECT_EXPORT_TIMEOUT_SECONDS}. No export was attempted.`,
+            };
+          }
+          timeoutSeconds = args.timeout_seconds;
+        }
         const script = buildToolScript(`
           var seq = app.project.activeSequence;
           if (!seq) return __error("No active sequence");
-          
+
           var outputPath = "${escapeForExtendScript(args.output_path)}";
-          
+
           ${args.preset_path
             ? `var presetPath = "${escapeForExtendScript(args.preset_path)}";`
             : `var presetPath = __findH264Preset();
                if (!presetPath) return __error("Could not locate a default H.264 preset. Pass preset_path explicitly.");`
           }
+          var workArea = ${args.work_area_only ? '"work_area"' : '"entire"'};
 
-           var exportResult = seq.exportAsMediaDirect(
-            outputPath,
-            presetPath,
-             ${args.work_area_only ? "app.encoder.ENCODE_WORKAREA" : "app.encoder.ENCODE_ENTIRE"}
-           );
-           if (exportResult !== true && exportResult !== 1) return __error("Premiere did not confirm that the sequence export was accepted.");
-           return __result({
-             exported: true,
-             accepted: true,
-             verified: false,
-             outcome: "committed_unverified",
-             outputPath: outputPath,
-             presetUsed: presetPath,
-             verificationScope: "Premiere accepted the direct export. Verify the completed output file independently."
-           });
+          var outputFile = new File(outputPath);
+          if (!outputFile.parent || !outputFile.parent.exists) {
+            return __error("The export output directory does not exist: " + outputFile.parent + ". No export was attempted.");
+          }
+
+          function __fileState(path) {
+            var f = new File(path);
+            if (!f.exists) return { exists: false, sizeBytes: 0, modifiedMs: null, modifiedAt: null };
+            var modified = null;
+            try { modified = f.modified ? f.modified.getTime() : null; } catch (modifiedError) { modified = null; }
+            return {
+              exists: true,
+              sizeBytes: Number(f.length) || 0,
+              modifiedMs: modified,
+              modifiedAt: modified === null ? null : new Date(modified).toUTCString()
+            };
+          }
+
+          var before = __fileState(outputPath);
+          var exportResult;
+          var hostError = null;
+          try {
+            exportResult = seq.exportAsMediaDirect(
+              outputPath,
+              presetPath,
+              ${args.work_area_only ? "app.encoder.ENCODE_WORKAREA" : "app.encoder.ENCODE_ENTIRE"}
+            );
+          } catch (exportError) {
+            hostError = String(exportError);
+          }
+          var after = __fileState(outputPath);
+
+          var hostReturnType = typeof exportResult;
+          var hostReturn = exportResult === undefined ? "undefined" : (exportResult === null ? "null" : String(exportResult));
+          var normalizedReturn = hostReturnType === "string" ? exportResult.replace(/^ +| +$/g, "").toLowerCase() : "";
+          // Premiere documents a boolean, but shipping hosts also return 1 or the
+          // string "No Error" for a completed render. A return that is neither an
+          // acceptance nor an explicit rejection is ambiguous and never counts as
+          // success on its own; the output file decides.
+          var hostAccepted = hostError === null && (exportResult === true || exportResult === 1 || normalizedReturn === "no error" || normalizedReturn === "true");
+          var hostRejected = hostError !== null || exportResult === false || normalizedReturn === "false" ||
+            (hostReturnType === "string" && normalizedReturn !== "" && !hostAccepted);
+          var freshOutput = after.exists && after.sizeBytes > 0 &&
+            (!before.exists || after.modifiedMs !== before.modifiedMs || after.sizeBytes !== before.sizeBytes);
+
+          var outputFileReport = { exists: after.exists, sizeBytes: after.sizeBytes, modifiedAt: after.modifiedAt };
+
+          if (freshOutput && !hostRejected) {
+            return __result({
+              acknowledgement: "export_completed",
+              outcome: "completed",
+              mode: "direct",
+              queued: false,
+              completed: true,
+              exported: true,
+              accepted: true,
+              verified: true,
+              verification: "output_file_written",
+              outputPath: outputPath,
+              presetUsed: presetPath,
+              workArea: workArea,
+              outputFile: outputFileReport,
+              replacedExistingFile: before.exists,
+              hostReturn: hostReturn,
+              hostReturnType: hostReturnType,
+              verificationScope: "exportAsMediaDirect renders synchronously. Premiere returned and a new or changed non-empty file was observed at outputPath. Codec, duration, and loudness are not checked here."
+            });
+          }
+
+          if (hostRejected && !freshOutput) {
+            return __error("Premiere rejected the direct export (" + (hostError !== null ? hostError : "returned " + hostReturn) + "). No new output file was written to " + outputPath + ".");
+          }
+
+          var reason = hostRejected
+            ? "Premiere reported a failure but a new file exists at outputPath; it may be partial."
+            : "Premiere returned " + hostReturn + " but no new non-empty file was observed at outputPath.";
+          return __jsonStringify({
+            success: false,
+            error: "Export outcome uncertain: " + reason + " Check outputPath before retrying. Acknowledgement: " + __jsonStringify({
+              acknowledgement: "export_outcome_uncertain",
+              outcome: "uncertain",
+              reason: hostRejected ? "host_rejected_with_output" : "no_fresh_output",
+              mode: "direct",
+              queued: false,
+              completed: false,
+              verified: false,
+              outputPath: outputPath,
+              presetUsed: presetPath,
+              workArea: workArea,
+              outputFile: outputFileReport,
+              hostReturn: hostReturn,
+              hostReturnType: hostReturnType,
+              hostError: hostError
+            })
+          });
         `);
-        return sendCommand(script, { ...bridgeOptions, timeoutMs: 120000 }); // 2 min timeout for exports
+        const result = await sendCommand(script, { ...bridgeOptions, timeoutMs: timeoutSeconds * 1000 });
+        if (result.outcome !== "uncertain") return result;
+        return {
+          ...result,
+          error: directExportTimeoutMessage(args.output_path, timeoutSeconds, result.error),
+        };
       },
     },
 
@@ -1172,6 +1336,8 @@ export function getExportTools(bridgeOptions: BridgeOptions) {
             accepted: true,
             verified: false,
             outcome: "committed_unverified",
+            mode: "ame_queue",
+            completed: false,
             jobId: String(jobId),
             outputPath: outputPath,
             savedProjectPath: savedProjectPath,

@@ -3,7 +3,7 @@
   "evidenceScope": "source_catalog_may_include_unreleased_work",
   "sourceVersion": "1.16.3",
   "sourcePath": "docs/supported-actions.md",
-  "sourceSha256": "1430e1e61674d24585e9d0dddfaf8a4da4f07d2425604f4b1e4437be1538a715",
+  "sourceSha256": "2adbd1622bd55ffc32edad854010f1aa9e86609863fd4076a0c5de4fba312c86",
   "hostVerification": "not_established_by_catalogs",
   "counts": {
     "default": 380,
@@ -747,7 +747,7 @@
       "name": "export_sequence",
       "surface": "default",
       "modes": "Single operation",
-      "description": "Export the active sequence using Adobe Media Encoder"
+      "description": "Render the active sequence directly to a file with Sequence.exportAsMediaDirect (synchronous, not queued). Success means Premiere returned and a fresh output file was observed at output_path (outcome \"completed\"). When Premiere's reply or the output file cannot confirm the render, the call fails with an error that starts with \"Export outcome uncertain\" and carries a JSON acknowledgement; check output_path and call reconcile_bridge_command instead of retrying."
     },
     {
       "name": "export_sequence_clip_review_frames",
@@ -2811,7 +2811,7 @@
       "name": "validate_export_preset",
       "surface": "default",
       "modes": "Single operation",
-      "description": "Validate that an Adobe Media Encoder .epr preset exists and ask the active Premiere sequence which output extension it produces"
+      "description": "Validate that an Adobe Media Encoder .epr preset exists, is a readable non-empty regular file, and does not use a Same as Project destination. By default it also asks the active Premiere sequence which output extension the preset produces; pass host_check: false to run only the local file checks without Premiere."
     },
     {
       "name": "validate_mogrt_brand_kit",
